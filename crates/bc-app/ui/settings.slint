@@ -1,0 +1,663 @@
+import { LineEdit, ScrollView } from "std-widgets.slint";
+import { Theme, Glyph, Fonts } from "theme.slint";
+import { Icon, Btn, Toggle, IconButton, Chip, Choice, Heading } from "widgets.slint";
+
+// One scrolling page; every change applies and saves immediately.
+// Nothing inside the scroll area word-wraps: wrapped text is measured as
+// one line there, which would cut off the end of the page.
+
+export struct InputToggle {
+    code: int,
+    label: string,
+    on: bool,
+}
+
+export struct InputToggleRow {
+    items: [InputToggle],
+}
+
+export struct DisplayCfg {
+    hw-name: string,
+    title: string,
+    hue: int,
+    subtitle: string,
+    alias: string,
+    internal: bool,
+    show-volume: bool,
+    show-input: bool,
+    input-rows: [InputToggleRow],
+}
+
+export struct ShortcutRow {
+    header: string,
+    label: string,
+    chord: string,
+    recording: bool,
+    warning: string,
+}
+
+export struct ProfileCfg {
+    name: string,
+    summary: string,
+}
+
+component Card inherits Rectangle {
+    background: Theme.surface;
+    border-radius: 14px;
+    VerticalLayout {
+        padding-top: 4px;
+        padding-bottom: 4px;
+        @children
+    }
+}
+
+component Line inherits Rectangle {
+    height: 1px;
+    background: Theme.border;
+}
+
+// Title (+ optional hint) on the left, a control on the right.
+component Row inherits HorizontalLayout {
+    in property <string> text;
+    in property <string> hint;
+    padding-left: 16px;
+    padding-right: 14px;
+    padding-top: 9px;
+    padding-bottom: 9px;
+    spacing: 12px;
+    min-height: 50px;
+    VerticalLayout {
+        alignment: center;
+        horizontal-stretch: 1;
+        spacing: 1px;
+        Text {
+            text: root.text;
+            color: Theme.text;
+            overflow: elide;
+        }
+        if root.hint != "": Text {
+            text: root.hint;
+            font-size: 11.5px;
+            color: Theme.subtext;
+            overflow: elide;
+        }
+    }
+    @children
+}
+
+component KeyCap inherits Rectangle {
+    in property <string> text;
+    in property <bool> recording;
+    callback clicked();
+    width: 132px;
+    height: 30px;
+    border-radius: 15px;
+    background: root.recording ? Theme.accent : (touch.has-hover ? Theme.surface-hover : Theme.track);
+    animate background { duration: 120ms; }
+    Text {
+        text: root.recording ? "Press keys…" : (root.text == "" ? "Add" : root.text);
+        font-size: 12px;
+        font-weight: root.text != "" || root.recording ? 600 : 400;
+        color: root.recording ? Theme.on-accent : (root.text == "" ? Theme.faint : Theme.text);
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// One tab of the top bar, with an accent bar under the chosen one.
+component Tab inherits Rectangle {
+    in property <string> icon;
+    in property <string> text;
+    in property <bool> active;
+    in property <color> tint: Theme.accent;
+    callback clicked();
+    height: 40px;
+    border-radius: 10px;
+    background: touch.has-hover && !root.active ? Theme.surface-hover : transparent;
+    animate background { duration: 100ms; }
+    HorizontalLayout {
+        alignment: center;
+        spacing: 7px;
+        Icon {
+            text: root.icon;
+            font-size: 13px;
+            color: root.active ? root.tint : Theme.subtext;
+        }
+        Text {
+            text: root.text;
+            font-size: 12.5px;
+            font-weight: root.active ? 600 : 400;
+            color: root.active ? Theme.text : Theme.subtext;
+            vertical-alignment: center;
+        }
+    }
+    Rectangle {
+        y: parent.height - 3px;
+        x: (parent.width - self.width) / 2;
+        width: root.active ? 28px : 0px;
+        height: 3px;
+        border-radius: 1.5px;
+        background: root.tint;
+        animate width { duration: 160ms; easing: ease-out; }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Scrolling body of one tab.
+component Page inherits ScrollView {
+    VerticalLayout {
+        width: root.visible-width;
+        padding-left: 24px;
+        padding-right: 24px;
+        padding-top: 18px;
+        padding-bottom: 28px;
+        spacing: 10px;
+        alignment: start;
+        @children
+    }
+}
+
+component Note inherits Text {
+    font-size: 11.5px;
+    color: Theme.faint;
+    overflow: elide;
+}
+
+export component SettingsWindow inherits Window {
+    title: "Brightness Control";
+    background: Theme.bg;
+    default-font-family: Fonts.text;
+    default-font-size: 13px;
+    preferred-width: 540px;
+    preferred-height: 600px;
+    min-width: 480px;
+    min-height: 420px;
+
+    in property <bool> dark: true;
+    in property <string> version;
+    in property <string> status;
+    in-out property <int> tab;
+
+    in property <int> theme-index;
+    in property <bool> start-with-windows;
+    in property <bool> snap;
+    in property <bool> tray-scroll;
+    callback theme-selected(int);
+    callback general-toggled(string, bool);
+    callback rescan();
+    callback open-logs();
+
+    in property <[DisplayCfg]> displays;
+    callback alias-edited(int, string);
+    callback display-toggled(int, string, bool);
+    callback input-toggled(int, int, bool);
+    callback hue-picked(int, int);
+
+    in property <[ShortcutRow]> shortcuts;
+    in property <bool> recording;
+    callback record(int);
+    callback clear-shortcut(int);
+    callback key-captured(string, bool, bool, bool, bool);
+    callback cancel-record();
+
+    in property <[ProfileCfg]> profiles;
+    in-out property <string> new-profile-name;
+    in property <bool> name-taken; // the typed name is an existing profile
+    callback profile-name-edited(string);
+    callback profile-add(string, bool); // name, overwrite allowed
+    callback profile-rename(int, string);
+    callback profile-update(int);
+    callback profile-delete(int);
+
+    recorder := FocusScope {
+        enabled: root.recording;
+        key-pressed(e) => {
+            if (e.text == Key.Escape) {
+                root.cancel-record();
+                return accept;
+            }
+            root.key-captured(e.text, e.modifiers.control, e.modifiers.alt, e.modifiers.shift, e.modifiers.meta);
+            accept
+        }
+    }
+
+    changed recording => {
+        if (root.recording) {
+            recorder.focus();
+        }
+    }
+
+    VerticalLayout {
+        // ---------------- Fixed header: title and tabs never scroll away
+        VerticalLayout {
+            padding-left: 24px;
+            padding-right: 24px;
+            padding-top: 18px;
+            spacing: 12px;
+            HorizontalLayout {
+                spacing: 11px;
+                Rectangle {
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 16px;
+                    background: Theme.accent;
+                    Icon {
+                        text: Glyph.sun;
+                        font-size: 15px;
+                        color: Theme.on-accent;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: "Brightness Control";
+                        font-family: Fonts.display;
+                        font-size: 17px;
+                        font-weight: 600;
+                        color: Theme.text;
+                    }
+                    Text {
+                        text: root.status != "" ? root.status : root.version + " · changes are saved as you go";
+                        font-size: 11.5px;
+                        color: root.status != "" ? Theme.danger : Theme.faint;
+                        overflow: elide;
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 4px;
+                Tab {
+                    horizontal-stretch: 1;
+                    icon: Glyph.settings;
+                    text: "General";
+                    active: root.tab == 0;
+                    clicked => {
+                        root.tab = 0;
+                    }
+                }
+                Tab {
+                    horizontal-stretch: 1;
+                    icon: Glyph.display;
+                    text: "Displays";
+                    tint: Theme.sky;
+                    active: root.tab == 1;
+                    clicked => {
+                        root.tab = 1;
+                    }
+                }
+                Tab {
+                    horizontal-stretch: 1;
+                    icon: Glyph.star;
+                    text: "Profiles";
+                    tint: Theme.violet;
+                    active: root.tab == 2;
+                    clicked => {
+                        root.tab = 2;
+                    }
+                }
+                Tab {
+                    horizontal-stretch: 1;
+                    icon: Glyph.keyboard;
+                    text: "Shortcuts";
+                    tint: Theme.mint;
+                    active: root.tab == 3;
+                    clicked => {
+                        root.tab = 3;
+                    }
+                }
+            }
+        }
+        Line { }
+
+        // ---------------- General
+        if root.tab == 0: Page {
+            vertical-stretch: 1;
+            Heading {
+                text: "Look";
+            }
+            Choice {
+                options: ["System", "Dark", "Light"];
+                selected: root.theme-index;
+                picked(i) => {
+                    root.theme-selected(i);
+                }
+            }
+            VerticalLayout {
+                padding-top: 10px;
+                Heading {
+                    text: "Behaviour";
+                }
+            }
+            Card {
+                Row {
+                    text: "Start with Windows";
+                    hint: "Wait quietly in the tray after sign-in";
+                    Toggle {
+                        checked: root.start-with-windows;
+                        toggled(on) => {
+                            root.general-toggled("start", on);
+                        }
+                    }
+                }
+                Line { }
+                Row {
+                    text: "Snap to tens";
+                    hint: "Columns stick to 10, 20, 30… — hold Ctrl for exact values";
+                    Toggle {
+                        checked: root.snap;
+                        toggled(on) => {
+                            root.general-toggled("snap", on);
+                        }
+                    }
+                }
+                Line { }
+                Row {
+                    text: "Scroll on the tray icon";
+                    hint: "The mouse wheel over the icon changes every display";
+                    Toggle {
+                        checked: root.tray-scroll;
+                        toggled(on) => {
+                            root.general-toggled("tray", on);
+                        }
+                    }
+                }
+            }
+            VerticalLayout {
+                padding-top: 10px;
+                Heading {
+                    text: "Troubleshooting";
+                }
+            }
+            Card {
+                Row {
+                    text: "Log files";
+                    hint: "Daily logs, kept for a week";
+                    Btn {
+                        icon: Glyph.folder;
+                        text: "Open folder";
+                        clicked => {
+                            root.open-logs();
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---------------- Displays
+        if root.tab == 1: Page {
+            vertical-stretch: 1;
+            HorizontalLayout {
+                Heading {
+                    text: "Connected displays";
+                    color: Theme.sky;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                Btn {
+                    icon: Glyph.refresh;
+                    text: "Scan again";
+                    clicked => {
+                        root.rescan();
+                    }
+                }
+            }
+            for d[i] in root.displays: Card {
+                Row {
+                    text: d.title;
+                    hint: d.subtitle;
+                    Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        border-radius: 5px;
+                        background: Theme.hue(d.hue);
+                    }
+                    LineEdit {
+                        width: 170px;
+                        text: d.alias;
+                        placeholder-text: "Rename…";
+                        edited(t) => {
+                            root.alias-edited(i, t);
+                        }
+                    }
+                }
+                Line { }
+                Row {
+                    text: "Colour";
+                    hint: "Its column in the panel and its input buttons";
+                    HorizontalLayout {
+                        spacing: 6px;
+                        for h in 6: Rectangle {
+                            width: 22px;
+                            height: 22px;
+                            border-radius: 11px;
+                            background: h == d.hue ? Theme.hue(h) : Theme.surface;
+                            Rectangle {
+                                width: h == d.hue ? 10px : 16px;
+                                height: self.width;
+                                border-radius: self.width / 2;
+                                background: h == d.hue ? Theme.on-hue : Theme.hue(h);
+                                animate width { duration: 120ms; }
+                            }
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.hue-picked(i, h);
+                                }
+                            }
+                        }
+                    }
+                }
+                if !d.internal: Line { }
+                if !d.internal: Row {
+                    text: "Volume column";
+                    hint: "For monitors with speakers";
+                    Toggle {
+                        tint: Theme.hue(d.hue);
+                        checked: d.show-volume;
+                        toggled(on) => {
+                            root.display-toggled(i, "volume", on);
+                        }
+                    }
+                }
+                if !d.internal: Line { }
+                if !d.internal: Row {
+                    text: "Input switching";
+                    hint: "Pick the source from the right-click menu";
+                    Toggle {
+                        tint: Theme.hue(d.hue);
+                        checked: d.show-input;
+                        toggled(on) => {
+                            root.display-toggled(i, "input", on);
+                        }
+                    }
+                }
+                if !d.internal && d.show-input: VerticalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    padding-bottom: 12px;
+                    spacing: 6px;
+                    for r in d.input-rows: HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
+                        for c in r.items: Chip {
+                            text: c.label;
+                            active: c.on;
+                            tint: Theme.hue(d.hue);
+                            clicked => {
+                                root.input-toggled(i, c.code, !c.on);
+                            }
+                        }
+                    }
+                }
+            }
+            if root.displays.length == 0: Text {
+                text: "No displays found yet.";
+                color: Theme.subtext;
+            }
+        }
+
+        // ---------------- Profiles
+        if root.tab == 2: Page {
+            vertical-stretch: 1;
+            Heading {
+                text: "Save the current levels";
+                color: Theme.violet;
+            }
+            Card {
+                HorizontalLayout {
+                    padding: 12px;
+                    spacing: 8px;
+                    LineEdit {
+                        horizontal-stretch: 1;
+                        placeholder-text: "Name, e.g. Night";
+                        text <=> root.new-profile-name;
+                        edited(t) => {
+                            root.profile-name-edited(t);
+                        }
+                        // Enter never replaces an existing profile; only the
+                        // button, once it says "Overwrite", does.
+                        accepted(t) => {
+                            root.profile-add(t, false);
+                        }
+                    }
+                    Btn {
+                        icon: root.name-taken ? Glyph.sync : Glyph.add;
+                        text: root.name-taken ? "Overwrite" : "Save";
+                        primary: true;
+                        tint: root.name-taken ? Theme.coral : Theme.violet;
+                        clicked => {
+                            root.profile-add(root.new-profile-name, root.name-taken);
+                        }
+                    }
+                }
+                if root.name-taken: HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    padding-bottom: 12px;
+                    Text {
+                        text: "“" + root.new-profile-name +"” already exists — Overwrite replaces its saved levels.";
+                        font-size: 11.5px;
+                        color: Theme.coral;
+                        overflow: elide;
+                    }
+                }
+            }
+            if root.profiles.length > 0: VerticalLayout {
+                padding-top: 10px;
+                Heading {
+                    text: "Saved";
+                    color: Theme.violet;
+                }
+            }
+            if root.profiles.length > 0: Card {
+                for p[i] in root.profiles: VerticalLayout {
+                    if i > 0: Line { }
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 10px;
+                        padding-top: 8px;
+                        padding-bottom: 8px;
+                        spacing: 8px;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 2px;
+                            LineEdit {
+                                text: p.name;
+                                edited(t) => {
+                                    root.profile-rename(i, t);
+                                }
+                            }
+                            Text {
+                                text: p.summary;
+                                font-size: 11.5px;
+                                color: Theme.subtext;
+                                overflow: elide;
+                            }
+                        }
+                        IconButton {
+                            icon: Glyph.sync;
+                            clicked => {
+                                root.profile-update(i);
+                            }
+                        }
+                        IconButton {
+                            icon: Glyph.delete;
+                            danger: true;
+                            clicked => {
+                                root.profile-delete(i);
+                            }
+                        }
+                    }
+                }
+            }
+            Note {
+                text: root.profiles.length > 0
+                    ? "↻ takes the current levels · apply profiles from the right-click menu"
+                    : "Saved profiles appear in the tray icon's right-click menu.";
+            }
+        }
+
+        // ---------------- Shortcuts
+        if root.tab == 3: Page {
+            vertical-stretch: 1;
+            Card {
+                for s[i] in root.shortcuts: VerticalLayout {
+                    if s.header != "" && i > 0: Line { }
+                    if s.header != "": HorizontalLayout {
+                        padding-left: 16px;
+                        Text {
+                            text: s.header;
+                            font-size: 11px;
+                            font-weight: 600;
+                            color: Theme.mint;
+                            height: 30px;
+                            vertical-alignment: bottom;
+                        }
+                    }
+                    Row {
+                        text: s.label;
+                        hint: s.warning;
+                        min-height: 44px;
+                        padding-top: 5px;
+                        padding-bottom: 5px;
+                        KeyCap {
+                            text: s.chord;
+                            recording: s.recording;
+                            clicked => {
+                                if (s.recording) {
+                                    root.cancel-record();
+                                } else {
+                                    root.record(i);
+                                }
+                            }
+                        }
+                        IconButton {
+                            icon: Glyph.close;
+                            size: 28px;
+                            opacity: s.chord != "" ? 1 : 0;
+                            clicked => {
+                                root.clear-shortcut(i);
+                            }
+                        }
+                    }
+                }
+            }
+            Note {
+                text: "Click a key to record · Esc cancels · Backspace removes";
+            }
+        }
+    }
+}

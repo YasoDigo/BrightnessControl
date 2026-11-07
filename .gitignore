@@ -1,0 +1,14 @@
+# Build output
+target/
+*.pdb
+dist/
+
+# Local only: design notes and an abandoned WebView2 experiment
+ANALIZ.md
+crates/bc-desk/
+
+# Editors / OS
+.vs/
+.vscode/
+*.swp
+Thumbs.db

@@ -1,0 +1,230 @@
+import { Theme, Glyph, Fonts } from "theme.slint";
+import { LightColumn, IconButton, Icon } from "widgets.slint";
+
+export struct MonitorRow {
+    name: string,
+    internal: bool,
+    brightness: int,
+    volume: int,
+    show-volume: bool,
+    tint: color,
+}
+
+// Number above one column.
+component Amount inherits Text {
+    in property <int> value;
+    text: root.value;
+    font-family: Fonts.display;
+    font-size: 17px;
+    font-weight: 600;
+    color: Theme.text;
+    horizontal-alignment: center;
+}
+
+// One display: its light column, an optional slim volume column, its name.
+component Channel inherits VerticalLayout {
+    in property <string> name;
+    in property <string> glyph;
+    in property <int> brightness;
+    in property <int> volume;
+    in property <bool> show-volume;
+    in property <bool> snap;
+    in property <color> tint: Theme.accent;
+    in property <color> on-tint: Theme.on-hue;
+    callback brightness-changed(int);
+    callback volume-changed(int);
+    callback wheel(bool, bool, bool); // volume?, up, ctrl
+    spacing: 10px;
+    alignment: start;
+
+    HorizontalLayout {
+        spacing: 8px;
+        alignment: center;
+        VerticalLayout {
+            spacing: 8px;
+            Amount {
+                value: root.brightness;
+            }
+            LightColumn {
+                value: root.brightness;
+                snap: root.snap;
+                tint: root.tint;
+                on-tint: root.on-tint;
+                icon: root.brightness < 35 ? Glyph.sun-low : Glyph.sun;
+                changed(v) => {
+                    root.brightness-changed(v);
+                }
+                wheel(up, ctrl) => {
+                    root.wheel(false, up, ctrl);
+                }
+            }
+        }
+        if root.show-volume: VerticalLayout {
+            spacing: 8px;
+            Amount {
+                value: root.volume;
+                font-size: 12px;
+                font-weight: 400;
+                color: Theme.subtext;
+            }
+            LightColumn {
+                width: 30px;
+                value: root.volume;
+                snap: root.snap;
+                tint: root.tint.transparentize(0.55);
+                on-tint: Theme.text;
+                icon: root.volume == 0 ? Glyph.mute : Glyph.volume;
+                changed(v) => {
+                    root.volume-changed(v);
+                }
+                wheel(up, ctrl) => {
+                    root.wheel(true, up, ctrl);
+                }
+            }
+        }
+    }
+
+    HorizontalLayout {
+        alignment: center;
+        spacing: 5px;
+        Icon {
+            text: root.glyph;
+            font-size: 11px;
+            color: root.tint;
+        }
+        Text {
+            text: root.name;
+            font-size: 12px;
+            color: Theme.subtext;
+            overflow: elide;
+            max-width: 110px;
+        }
+    }
+}
+
+export component Flyout inherits Window {
+    title: "Brightness Control";
+    no-frame: true;
+    always-on-top: true;
+    background: Theme.bg;
+    default-font-family: Fonts.text;
+    default-font-size: 13px;
+
+    in property <[MonitorRow]> monitors;
+    in property <bool> show-master;
+    in property <int> master;
+    in property <bool> snap: true;
+    in property <bool> scanning;
+    in-out property <bool> open;
+    out property <length> wanted-width: max(220px, content.preferred-width);
+    out property <length> wanted-height: content.preferred-height;
+
+    callback brightness(int, int);
+    callback volume(int, int);
+    callback master-changed(int);
+    callback wheel(int, bool, bool, bool); // index (-1 = master), volume?, up, ctrl
+    callback settings();
+    callback dismiss();
+    callback content-resized();
+
+    changed wanted-height => {
+        root.content-resized();
+    }
+    changed wanted-width => {
+        root.content-resized();
+    }
+
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.text == Key.Escape) {
+                root.dismiss();
+                return accept;
+            }
+            reject
+        }
+    }
+
+    Rectangle {
+        y: root.open ? 0px : 12px;
+        opacity: root.open ? 1 : 0;
+        animate y { duration: 240ms; easing: ease-out-quart; }
+        animate opacity { duration: 160ms; easing: ease-out; }
+
+        content := VerticalLayout {
+            padding-left: 22px;
+            padding-right: 22px;
+            padding-top: 20px;
+            padding-bottom: 12px;
+            spacing: 14px;
+
+            HorizontalLayout {
+                spacing: 22px;
+                alignment: center;
+
+                if root.show-master: Channel {
+                    name: "All";
+                    glyph: Glyph.all;
+                    tint: Theme.rail;
+                    on-tint: Theme.bg;
+                    brightness: root.master;
+                    snap: root.snap;
+                    brightness-changed(v) => {
+                        root.master-changed(v);
+                    }
+                    wheel(vol, up, ctrl) => {
+                        root.wheel(-1, false, up, ctrl);
+                    }
+                }
+                if root.show-master: Rectangle {
+                    width: 1px;
+                    background: Theme.border;
+                }
+
+                for m[i] in root.monitors: Channel {
+                    name: m.name;
+                    glyph: m.internal ? Glyph.laptop : Glyph.display;
+                    brightness: m.brightness;
+                    volume: m.volume;
+                    show-volume: m.show-volume;
+                    tint: m.tint;
+                    snap: root.snap;
+                    brightness-changed(v) => {
+                        root.brightness(i, v);
+                    }
+                    volume-changed(v) => {
+                        root.volume(i, v);
+                    }
+                    wheel(vol, up, ctrl) => {
+                        root.wheel(i, vol, up, ctrl);
+                    }
+                }
+
+                if root.monitors.length == 0: Text {
+                    text: root.scanning ? "Looking for displays…" : "No compatible displays.\nTurn on DDC/CI in the monitor menu.";
+                    color: Theme.subtext;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    height: 120px;
+                }
+            }
+
+            HorizontalLayout {
+                Text {
+                    text: root.scanning ? "Scanning…" : "Brightness";
+                    font-size: 11px;
+                    color: Theme.faint;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                IconButton {
+                    icon: Glyph.settings;
+                    size: 28px;
+                    clicked => {
+                        root.settings();
+                    }
+                }
+            }
+        }
+    }
+}

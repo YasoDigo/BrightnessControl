@@ -1,0 +1,18 @@
+[package]
+name = "bc-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+tracing.workspace = true
+windows.workspace = true
+toml = "1"
+quick-xml = { version = "0.42", features = ["serialize"] }
+wmi = "0.18"
+
+[[bin]]
+name = "bc-cli"
+path = "src/bin/bc-cli.rs"

@@ -1,0 +1,71 @@
+// Colours are pushed from Rust (dark or light palette).
+export global Theme {
+    in-out property <bool> dark: true;
+    in-out property <color> bg: #1c1c21;
+    in-out property <color> surface: #ffffff08;
+    in-out property <color> surface-hover: #ffffff10;
+    in-out property <color> surface-strong: #ffffff1a;
+    in-out property <color> border: #ffffff12;
+    in-out property <color> text: #f2f3f5;
+    in-out property <color> subtext: #a4a7b1;
+    in-out property <color> faint: #6f727c;
+    in-out property <color> track: #ffffff1a;
+    in-out property <color> rail: #ffffff5c;
+    in-out property <color> knob: #454545;
+    in-out property <color> accent: #7b8cff;
+    in-out property <color> on-accent: #ffffff;
+    in-out property <color> danger: #ff7a85;
+    // Display / section colours.
+    in-out property <color> amber: #f2b85b;
+    in-out property <color> sky: #6cb6ff;
+    in-out property <color> mint: #5fd3a6;
+    in-out property <color> violet: #b39cff;
+    in-out property <color> rose: #ff8fb1;
+    in-out property <color> coral: #ff9a6b;
+    in-out property <color> on-hue: #1c1b20;
+    // Raised buttons in the tray menu.
+    in-out property <color> tile: #2a2a30;
+    in-out property <color> tile-hover: #35353c;
+
+    public pure function hue(i: int) -> color {
+        if (i == 1) { return root.sky; }
+        if (i == 2) { return root.mint; }
+        if (i == 3) { return root.violet; }
+        if (i == 4) { return root.rose; }
+        if (i == 5) { return root.coral; }
+        return root.amber;
+    }
+}
+
+// Segoe Fluent Icons (Windows 11) code points.
+export global Glyph {
+    out property <string> sun: "\u{E706}";
+    out property <string> sun-low: "\u{EC8A}";
+    out property <string> moon: "\u{E708}";
+    out property <string> volume: "\u{E767}";
+    out property <string> mute: "\u{E74F}";
+    out property <string> settings: "\u{E713}";
+    out property <string> display: "\u{E7F4}";
+    out property <string> laptop: "\u{E7F8}";
+    out property <string> power: "\u{E7E8}";
+    out property <string> input: "\u{E8AB}";
+    out property <string> add: "\u{E710}";
+    out property <string> delete: "\u{E74D}";
+    out property <string> keyboard: "\u{E765}";
+    out property <string> color: "\u{E790}";
+    out property <string> refresh: "\u{E72C}";
+    out property <string> close: "\u{E711}";
+    out property <string> all: "\u{E7F9}";
+    out property <string> info: "\u{E946}";
+    out property <string> folder: "\u{E8B7}";
+    out property <string> check: "\u{E73E}";
+    out property <string> save: "\u{E74E}";
+    out property <string> star: "\u{E734}";
+    out property <string> sync: "\u{E895}";
+}
+
+export global Fonts {
+    out property <string> icons: "Segoe Fluent Icons";
+    out property <string> text: "Segoe UI Variable Text";
+    out property <string> display: "Segoe UI Variable Display";
+}

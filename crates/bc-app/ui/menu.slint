@@ -1,0 +1,236 @@
+import { Theme, Glyph, Fonts } from "theme.slint";
+import { Icon } from "widgets.slint";
+
+// The tray's right-click menu. Everything is the same kind of tile in a
+// three-column grid, so every target is big, even and easy to hit:
+// profiles, input sources, then Settings / Exit.
+
+export struct MenuProfile {
+    index: int,
+    name: string,
+    level: int,   // average brightness of the profile, 0-100
+    active: bool, // the displays are at these levels right now
+}
+
+export struct MenuProfileRow {
+    items: [MenuProfile],
+}
+
+export struct MenuInput {
+    code: int,
+    label: string,
+    current: bool,
+}
+
+export struct MenuInputRow {
+    items: [MenuInput],
+}
+
+export struct MenuInputGroup {
+    monitor: int,
+    title: string,
+    tint: color,
+    rows: [MenuInputRow],
+}
+
+component Caption inherits Text {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.8px;
+    color: Theme.faint;
+    overflow: elide;
+}
+
+// The one building block of the menu.
+component Tile inherits Rectangle {
+    in property <string> icon;
+    in property <string> text;
+    in property <bool> active;
+    in property <color> tint: Theme.accent;
+    in property <color> icon-color: Theme.subtext;
+    in property <int> level: -1; // a thin level line along the bottom
+    in property <bool> danger;
+    callback clicked();
+
+    property <bool> hot: touch.has-hover;
+    height: 42px;
+    min-width: 92px;
+    border-radius: 12px;
+    // A solid, slightly raised fill so each tile stands off the menu.
+    background: root.active ? root.tint : (touch.pressed ? Theme.tile : (root.hot ? Theme.tile-hover : Theme.tile));
+    animate background { duration: 100ms; }
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 8px;
+        alignment: center;
+        if root.icon != "": Icon {
+            text: root.icon;
+            font-size: 13px;
+            color: root.active ? Theme.on-hue : (root.danger && root.hot ? Theme.danger : root.icon-color);
+        }
+        Text {
+            text: root.text;
+            font-size: 12.5px;
+            font-weight: root.active ? 600 : 400;
+            color: root.active ? Theme.on-hue : (root.danger && root.hot ? Theme.danger : Theme.text);
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+
+    if root.level >= 0: Rectangle {
+        x: 12px;
+        y: root.height - 6px;
+        width: root.width - 24px;
+        height: 2px;
+        border-radius: 1px;
+        background: root.active ? Theme.on-hue.transparentize(0.7) : Theme.track;
+        Rectangle {
+            x: 0;
+            width: parent.width * clamp(root.level / 100, 0, 1);
+            height: 2px;
+            border-radius: 1px;
+            background: root.active ? Theme.on-hue : root.tint;
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Keeps a short last row in step with the full rows above it.
+component Filler inherits Rectangle {
+    horizontal-stretch: 1;
+    min-width: 92px;
+}
+
+export component TrayMenu inherits Window {
+    title: "Brightness Control menu";
+    no-frame: true;
+    always-on-top: true;
+    background: Theme.bg;
+    default-font-family: Fonts.text;
+    default-font-size: 13px;
+
+    in property <[MenuProfileRow]> profiles;
+    in property <[MenuInputGroup]> inputs;
+    out property <length> wanted-width: max(332px, content.preferred-width);
+    out property <length> wanted-height: content.preferred-height;
+
+    callback profile(int);
+    callback input(int, int);
+    callback settings();
+    callback quit();
+    callback dismiss();
+
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.text == Key.Escape) {
+                root.dismiss();
+                return accept;
+            }
+            reject
+        }
+    }
+
+    content := VerticalLayout {
+        padding: 14px;
+        spacing: 8px;
+        alignment: start;
+
+        // ---------------- Profiles
+        Caption {
+            text: "PROFILES";
+        }
+        for r in root.profiles: HorizontalLayout {
+            spacing: 8px;
+            for p in r.items: Tile {
+                horizontal-stretch: 1;
+                text: p.name;
+                active: p.active;
+                tint: Theme.violet;
+                icon-color: Theme.violet;
+                clicked => {
+                    root.profile(p.index);
+                }
+            }
+            for _ in 3 - r.items.length: Filler { }
+        }
+        if root.profiles.length == 0: Tile {
+            icon: Glyph.add;
+            text: "Save a profile in Settings";
+            icon-color: Theme.violet;
+            clicked => {
+                root.settings();
+            }
+        }
+
+        // ---------------- Inputs, one group per display
+        for g in root.inputs: VerticalLayout {
+            spacing: 8px;
+            Rectangle {
+                height: 9px;
+                Rectangle {
+                    y: 4px;
+                    height: 1px;
+                    background: Theme.border;
+                }
+            }
+            Caption {
+                text: "INPUT · " + g.title;
+            }
+            for r in g.rows: HorizontalLayout {
+                spacing: 8px;
+                for c in r.items: Tile {
+                    horizontal-stretch: 1;
+                    text: c.label;
+                    active: c.current;
+                    tint: g.tint;
+                    icon-color: g.tint;
+                    clicked => {
+                        root.input(g.monitor, c.code);
+                    }
+                }
+                for _ in 3 - r.items.length: Filler { }
+            }
+        }
+
+        // ---------------- Settings / Exit
+        Rectangle {
+            height: 9px;
+            Rectangle {
+                y: 4px;
+                height: 1px;
+                background: Theme.border;
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            Tile {
+                horizontal-stretch: 1;
+                icon: Glyph.settings;
+                icon-color: Theme.sky;
+                text: "Settings";
+                clicked => {
+                    root.settings();
+                }
+            }
+            Tile {
+                horizontal-stretch: 1;
+                icon: Glyph.power;
+                text: "Exit";
+                danger: true;
+                clicked => {
+                    root.quit();
+                }
+            }
+        }
+    }
+}

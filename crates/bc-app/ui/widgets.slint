@@ -1,0 +1,286 @@
+import { Theme, Glyph, Fonts } from "theme.slint";
+
+export component Icon inherits Text {
+    font-family: Fonts.icons;
+    font-size: 14px;
+    color: Theme.text;
+    vertical-alignment: center;
+    horizontal-alignment: center;
+}
+
+// A tall pill that fills from the bottom, like light rising in a glass.
+// Drag, click, mouse wheel and arrow keys; magnetic snap to tens (Ctrl =
+// precise). The value is owned by Rust: the column only reports `changed`.
+export component LightColumn inherits Rectangle {
+    in property <int> value;
+    in property <color> tint: Theme.accent;
+    in property <color> on-tint: Theme.on-accent;
+    in property <string> icon: Glyph.sun;
+    in property <bool> snap: true;
+    callback changed(int);
+    callback wheel(bool, bool);
+
+    property <bool> ctrl;
+    property <float> ratio: clamp(root.value / 100, 0, 1);
+    property <bool> hot: touch.has-hover || focus.has-focus;
+
+    width: 56px;
+    height: 176px;
+    border-radius: self.width / 2;
+    background: root.hot ? Theme.surface-strong : Theme.track;
+    animate background { duration: 150ms; }
+    forward-focus: focus;
+
+    function snapped(v: int) -> int {
+        if (!root.snap || root.ctrl) {
+            return v;
+        }
+        let r = Math.mod(v, 10);
+        if (r <= 2) {
+            return v - r;
+        }
+        if (r >= 8) {
+            return v + 10 - r;
+        }
+        return v;
+    }
+
+    function set-from(py: length) {
+        let r = clamp((root.height - py) / root.height, 0, 1);
+        root.changed(root.snapped(round(r * 100)));
+    }
+
+    function step(d: int) {
+        root.changed(clamp(root.value + d, 0, 100));
+    }
+
+    focus := FocusScope {
+        key-pressed(e) => {
+            if (e.text == Key.UpArrow || e.text == Key.RightArrow) {
+                root.step(1);
+                return accept;
+            }
+            if (e.text == Key.DownArrow || e.text == Key.LeftArrow) {
+                root.step(-1);
+                return accept;
+            }
+            if (e.text == Key.PageUp) {
+                root.step(10);
+                return accept;
+            }
+            if (e.text == Key.PageDown) {
+                root.step(-10);
+                return accept;
+            }
+            if (e.text == Key.Home) {
+                root.changed(0);
+                return accept;
+            }
+            if (e.text == Key.End) {
+                root.changed(100);
+                return accept;
+            }
+            reject
+        }
+    }
+
+    // The light. Never shorter than a circle so the rounded top stays round.
+    Rectangle {
+        property <length> h: root.value <= 0 ? 0px : max(root.width, root.height * root.ratio);
+        x: 0;
+        width: root.width;
+        height: self.h;
+        y: root.height - self.h;
+        border-radius: root.width / 2;
+        background: root.tint;
+        animate h { duration: 90ms; easing: ease-out; }
+    }
+
+    Icon {
+        y: root.height - root.width / 2 - self.height / 2;
+        height: 20px;
+        width: root.width;
+        text: root.icon;
+        font-size: root.width * 0.3;
+        color: root.value > 0 ? root.on-tint : Theme.subtext;
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        pointer-event(e) => {
+            root.ctrl = e.modifiers.control;
+            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                focus.focus();
+                root.set-from(self.mouse-y);
+            }
+        }
+        moved => {
+            if (self.pressed) {
+                root.set-from(self.mouse-y);
+            }
+        }
+        scroll-event(e) => {
+            if (e.delta-y != 0) {
+                root.wheel(e.delta-y > 0, e.modifiers.control);
+                return accept;
+            }
+            reject
+        }
+    }
+}
+
+export component IconButton inherits Rectangle {
+    in property <string> icon;
+    in property <length> size: 30px;
+    in property <bool> danger;
+    callback clicked();
+    width: root.size;
+    height: root.size;
+    border-radius: self.width / 2;
+    background: touch.pressed ? Theme.surface-strong : (touch.has-hover ? Theme.surface-hover : transparent);
+    animate background { duration: 100ms; }
+    Icon {
+        text: root.icon;
+        font-size: 13px;
+        color: root.danger && touch.has-hover ? Theme.danger : (touch.has-hover ? Theme.text : Theme.subtext);
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component Toggle inherits Rectangle {
+    in property <bool> checked;
+    in property <color> tint: Theme.accent;
+    callback toggled(bool);
+    width: 42px;
+    height: 24px;
+    border-radius: 12px;
+    background: root.checked ? root.tint : Theme.surface-strong;
+    animate background { duration: 140ms; }
+    Rectangle {
+        width: 18px;
+        height: 18px;
+        y: 3px;
+        x: root.checked ? parent.width - self.width - 3px : 3px;
+        border-radius: 9px;
+        background: root.checked ? Theme.on-hue : Theme.subtext;
+        animate x { duration: 160ms; easing: ease-out; }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.toggled(!root.checked);
+        }
+    }
+}
+
+// A row of mutually exclusive text choices (theme picker).
+export component Choice inherits Rectangle {
+    in property <[string]> options;
+    in property <int> selected;
+    callback picked(int);
+    height: 34px;
+    border-radius: 17px;
+    background: Theme.track;
+    HorizontalLayout {
+        padding: 3px;
+        spacing: 3px;
+        for o[i] in root.options: Rectangle {
+            horizontal-stretch: 1;
+            border-radius: 14px;
+            background: i == root.selected ? Theme.accent : (t.has-hover ? Theme.surface-hover : transparent);
+            animate background { duration: 140ms; }
+            Text {
+                text: o;
+                font-size: 12px;
+                font-weight: i == root.selected ? 600 : 400;
+                color: i == root.selected ? Theme.on-accent : Theme.subtext;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            t := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.picked(i);
+                }
+            }
+        }
+    }
+}
+
+export component Chip inherits Rectangle {
+    in property <string> text;
+    in property <bool> active;
+    in property <color> tint: Theme.accent;
+    callback clicked();
+    height: 28px;
+    border-radius: 14px;
+    background: root.active ? root.tint : (touch.has-hover ? Theme.surface-hover : Theme.track);
+    animate background { duration: 120ms; }
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        alignment: center;
+        Text {
+            text: root.text;
+            font-size: 12px;
+            color: root.active ? Theme.on-hue : Theme.subtext;
+            font-weight: root.active ? 600 : 400;
+            vertical-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component Btn inherits Rectangle {
+    in property <string> text;
+    in property <string> icon;
+    in property <bool> primary;
+    in property <color> tint: Theme.accent;
+    callback clicked();
+    height: 32px;
+    border-radius: 16px;
+    background: root.primary
+        ? (touch.has-hover ? root.tint.brighter(0.06) : root.tint)
+        : (touch.pressed ? Theme.surface-strong : (touch.has-hover ? Theme.surface-hover : Theme.track));
+    animate background { duration: 100ms; }
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 7px;
+        alignment: center;
+        if root.icon != "": Icon {
+            text: root.icon;
+            font-size: 12px;
+            color: root.primary ? Theme.on-hue : Theme.subtext;
+        }
+        if root.text != "": Text {
+            text: root.text;
+            font-size: 12px;
+            font-weight: root.primary ? 600 : 400;
+            color: root.primary ? Theme.on-hue : Theme.text;
+            vertical-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component Heading inherits Text {
+    font-size: 12px;
+    font-weight: 600;
+    color: Theme.accent;
+}
