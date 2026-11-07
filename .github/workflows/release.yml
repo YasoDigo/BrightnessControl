@@ -1,9 +1,15 @@
-name: Release
+﻿name: Release
 
 on:
   push:
     tags:
-      - "v1.0"
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (orn. v1.0.0)"
+        required: true
+        default: "v1.0.0"
 
 permissions:
   contents: write
@@ -13,6 +19,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -24,6 +32,7 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          name: BrightnessControl ${{ github.ref_name }}
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: BrightnessControl ${{ inputs.tag || github.ref_name }}
           files: target/release/*.exe
           generate_release_notes: true
